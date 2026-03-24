@@ -12,7 +12,7 @@ This codebase designs and optimises a **50 MW Central Receiver Solar Thermal Pow
 1. **Radial Staggered** – concentric-ring arrangement  
 2. **Fermat's Spiral** – golden-angle sunflower distribution
 
-The DE algorithm tunes four heliostat field parameters to maximise annual optical efficiency while targeting 50 MW thermal output.
+The DE algorithm tunes four heliostat field parameters to maximise annual optical efficiency while targeting 51 MW thermal output.
 
 ---
 
@@ -20,18 +20,18 @@ The DE algorithm tunes four heliostat field parameters to maximise annual optica
 
 ```
 heliostat_de/
-├── src/
-│   ├── solar_geometry.py    # Solar position, DNI loading
-│   ├── heliostat_field.py   # Layout generation (RS + FS)
-│   ├── efficiency.py        # Cosine, attenuation, spillage, overall efficiency
-│   ├── de_optimizer.py      # Differential Evolution algorithm
-│   ├── plotting.py          # All 8 figures
-│   └── main.py              # End-to-end pipeline
-├── data/
-│   └── quetta_solar.csv     # World Bank ESMAP Tier-2 DNI data
-├── outputs/                 # Generated figures (created on run)
+├── solar_geometry.py    # Solar position, DNI loading (auto-detects CSV format)
+├── heliostat_field.py   # Layout generation (RS + FS)
+├── efficiency.py        # Cosine, attenuation, spillage, overall efficiency
+├── de_optimizer.py      # Differential Evolution algorithm
+├── plotting.py          # All 8 figures
+├── main.py              # End-to-end pipeline
+├── quetta_solar.csv     # Your DNI data file (place in same folder)
+├── outputs/             # Generated figures (auto-created on run)
 └── README.md
 ```
+
+> **Flat folder layout:** all `.py` files and your CSV can live in the same directory — no subfolders required.
 
 ---
 
@@ -41,12 +41,58 @@ heliostat_de/
 # Install dependencies (Python 3.9+)
 pip install numpy scipy pandas matplotlib
 
-# Run the full pipeline
-cd heliostat_de
-python src/main.py
+# Run with CSV in the same folder (auto-detected)
+python main.py
+
+# Or pass any CSV file explicitly
+python main.py --csv path/to/your_file.csv
 ```
 
 **No API calls are made.** All computation is local and self-contained.
+
+---
+
+## CSV Format Support
+
+`solar_geometry.py` automatically detects and handles two ESMAP CSV formats — no configuration needed.
+
+### Format A — Raw ESMAP Logger Export
+Produced directly by the World Bank Tier-2 data logger at BUITEMS.
+
+```
+"TOACI1","Pk-Que","Min10Avg"           ← metadata row (skipped automatically)
+"TMSTAMP","RECNBR","GHI1_corr_Avg","DNI1_corr_Avg", ...   ← real headers
+"2015-09-17 16:30:00", 7, 471.45, 427.95, ...
+```
+
+Key columns used: `TMSTAMP` → `time`, `DNI1_corr_Avg` → `dni`
+
+### Format B — Clean World Bank ESMAP Download
+Standard cleaned export from energydata.info.
+
+```
+time,ghi_pyr,ghi_rsi,dni,dhi,air_temperature,...   ← headers on row 0
+2015-04-21 18:30,72.1,43.2,15,41.7,...
+```
+
+Key columns used: `time`, `dni`
+
+### How Detection Works
+The loader peeks at the first line of the file. If it contains `time` or `dni` → **Format B**. Otherwise → **Format A** (skips the metadata row and renames columns). A confirmation message is printed on load:
+
+```
+[CSV] Detected Format B (clean ESMAP export) — quetta_solar.csv
+[CSV] Loaded 106,594 valid rows (2015-04-21 → 2017-05-01)
+```
+
+### Using a Custom CSV
+Any CSV with a `time` (datetime) column and a `dni` (W/m²) column will work:
+
+```bash
+python main.py --csv my_custom_data.csv
+```
+
+If your column names differ, rename them in your file or add a mapping entry in `_detect_csv_format()` inside `solar_geometry.py`.
 
 ---
 
@@ -119,7 +165,7 @@ cos 2θᵢ = [(z₀−z₁)sin α − e₁ cos α sin A − n₁ cos α cos A]
 τₐ = 0.99326 − 0.1046·S + 0.017·S² − 0.002845·S³    [S in km]
 ```
 
-### 4. Spillage Factor (Eq. 12-13)
+### 4. Spillage Factor (Eq. 12–13)
 Gaussian approximation with σᵣ = 2.51 mrad
 
 ### 5. Overall Field Efficiency (Eq. 11)
@@ -138,16 +184,18 @@ where `ρ = 0.88` (mirror reflectivity)
 
 ## Output Figures
 
+All figures are saved to an `outputs/` folder created automatically next to `main.py`.
+
 | File | Description |
 |---|---|
-| `fig1_attenuation_radial_staggered.png` | Attenuation map, RS layout unoptimised |
-| `fig2_cosine_4panel_radial_staggered.png` | Cosine + overall efficiency, 4 design points |
-| `fig3_attenuation_fermat_spiral.png` | Attenuation map, FS layout unoptimised |
-| `fig4_power_4panel_fermat.png` | Power variation, 4 seasons, FS layout |
-| `fig5_optimised_layouts.png` | Optimised RS + FS side-by-side |
-| `fig6_de_convergence.png` | DE convergence curves (both layouts) |
-| `fig7_efficiency_comparison.png` | Before/after efficiency & heliostat count |
-| `fig8_dni_analysis.png` | DNI dataset analysis from CSV |
+| `fig1_attenuation_radial_staggered.png` | Attenuation efficiency map, RS layout (unoptimised) |
+| `fig2_cosine_4panel_radial_staggered.png` | Cosine + overall efficiency across 4 design points |
+| `fig3_attenuation_fermat_spiral.png` | Attenuation efficiency map, Fermat's Spiral (unoptimised) |
+| `fig4_power_4panel_fermat.png` | Power variation across 4 seasons, FS layout |
+| `fig5_optimised_layouts.png` | Optimised RS + FS field layouts side-by-side |
+| `fig6_de_convergence.png` | DE convergence curves for both layouts |
+| `fig7_efficiency_comparison.png` | Before/after efficiency and heliostat count bar charts |
+| `fig8_dni_analysis.png` | DNI dataset analysis (monthly averages, diurnal profiles, time series) |
 
 ---
 
@@ -162,6 +210,24 @@ where `ρ = 0.88` (mirror reflectivity)
 
 ---
 
+## Changelog
+
+### v1.2 — CSV format auto-detection
+- `solar_geometry.py`: Added `_detect_csv_format()` — automatically handles both the raw ESMAP logger export (Format A) and the clean World Bank download (Format B) without any configuration
+- No changes required in any other file; all CSV parsing is isolated in `solar_geometry.py`
+
+### v1.1 — Bug fixes
+- `solar_geometry.py`: Fixed column names and header parsing for the raw ESMAP logger CSV
+- `main.py`: Fixed `CSV_PATH` to auto-detect CSV location; added `--csv` command-line argument; fixed `OUT_DIR` to create `outputs/` next to the script
+- `plotting.py`: Fixed `OUT_DIR` for flat folder layout
+
+### v1.0 — Initial release
+- Replaced GA with DE/rand/1/bin optimisation
+- Implemented all 6 efficiency equations from the paper
+- Generated all 8 figures matching the paper
+
+---
+
 ## Site Information
 
 - **Location:** BUITEMS, Quetta, Balochistan, Pakistan
@@ -169,7 +235,7 @@ where `ρ = 0.88` (mirror reflectivity)
 - **Altitude:** ~1,670 m ASL
 - **DNI Range:** 1500–2750 W/m²/day (annual)
 - **DNI Equipment:** Tier-2 Rotating Shadowband Irradiometer (installed 2015)
-- **Data Source:** World Bank ESMAP ([energydata.info](https://energydata.info/dataset/pakistan-solar-radiation-measurement-data))
+- **Data Source:** World Bank ESMAP (energydata.info)
 
 ---
 
@@ -177,7 +243,7 @@ where `ρ = 0.88` (mirror reflectivity)
 
 **This project makes zero external API calls.** All computation is:
 - Local Python (NumPy, SciPy, Pandas, Matplotlib)
-- DNI data read from the bundled CSV file
+- DNI data read from a local CSV file
 - No internet access required
 
 ---
@@ -185,7 +251,7 @@ where `ρ = 0.88` (mirror reflectivity)
 ## References
 
 1. Haris et al. (2023). Genetic algorithm optimization of heliostat field layout. *Heliyon 9*, e21488. https://doi.org/10.1016/j.heliyon.2023.e21488
-2. Storn & Price (1997). Differential Evolution. *J. Global Optimization 11*, 341–359. https://link.springer.com/article/10.1023/A:1008202821328#citeas
-3. Siala & Elayeb (2001). Mathematical formulation of a no-blocking heliostat field. https://ideas.repec.org/a/eee/renene/v23y2001i1p77-92.html
-4. Kistler (1986). DELSOL3 User's Manual. Sandia National Laboratories. 
-5. Vittitoe & Biggs (1978). Terrestrial Propagation Loss. Sandia National Lab. https://www.sciencedirect.com/science/article/pii/S0038092X1100377X
+2. Storn & Price (1997). Differential Evolution. *J. Global Optimization 11*, 341–359.
+3. Siala & Elayeb (2001). Mathematical formulation of a no-blocking heliostat field. *Renewable Energy 23*, 77–92.
+4. Kistler (1986). DELSOL3 User's Manual. Sandia National Laboratories.
+5. Vittitoe & Biggs (1978). Terrestrial Propagation Loss. Sandia National Lab.
