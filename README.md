@@ -185,7 +185,7 @@ where `ρ = 0.88` (mirror reflectivity)
 ## References
 
 1. Haris et al. (2023). Genetic algorithm optimization of heliostat field layout. *Heliyon 9*, e21488. https://doi.org/10.1016/j.heliyon.2023.e21488
-2. Storn & Price (1997). Differential Evolution. *J. Global Optimization 11*, 341–359.
-3. Siala & Elayeb (2001). Mathematical formulation of a no-blocking heliostat field. *Renewable Energy 23*, 77–92.
-4. Kistler (1986). DELSOL3 User's Manual. Sandia National Laboratories.
-5. Vittitoe & Biggs (1978). Terrestrial Propagation Loss. Sandia National Lab.
+2. Storn & Price (1997). Differential Evolution. *J. Global Optimization 11*, 341–359. https://link.springer.com/article/10.1023/A:1008202821328#citeas
+3. Siala & Elayeb (2001). Mathematical formulation of a no-blocking heliostat field. https://ideas.repec.org/a/eee/renene/v23y2001i1p77-92.html
+4. Kistler (1986). DELSOL3 User's Manual. Sandia National Laboratories. 
+5. Vittitoe & Biggs (1978). Terrestrial Propagation Loss. Sandia National Lab. https://www.sciencedirect.com/science/article/pii/S0038092X1100377X
