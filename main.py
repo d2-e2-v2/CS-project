@@ -6,42 +6,32 @@ End-to-end pipeline – Differential Evolution optimisation of heliostat fields.
 Steps
 -----
 1. Load DNI data from CSV
-2. Run DE optimisation on Radial Staggered layout (100 generations)
-3. Run DE optimisation on Fermat Spiral layout    (100 generations)
-4. Produce active figures:
-     Fig 2 – Cosine + overall efficiency 4-panel (RS, optimised, 4 design days)
-     Fig 4 – Power variation 4-panel              (FS, optimised, 4 design days)
-     Fig 5 – Optimised layouts side-by-side
-     Fig 6 – DE convergence curves (both layouts overlaid, 100 generations)
-     Fig 7 – Before/After efficiency comparison bar chart
-     Fig 8 – DNI dataset analysis
-5. Print summary table replicating Table 6 from the paper
+2. Compute unoptimised efficiency scalars (for Fig 7 and new unoptimised figures)
+3. Run DE optimisation on Radial Staggered layout (100 generations)
+4. Run DE optimisation on Fermat Spiral layout    (100 generations)
+5. Produce figures:
+     Fig 1b – Unoptimised RS + FS layouts, 1×2 side-by-side with tower icon ★
+     Fig 2u – Unoptimised Radial Staggered, 2×2 grid (4 design days)
+     Fig 2  – Optimised Radial Staggered, 2×2 grid, avg DNI (4 design days)
+     Fig 4  – Optimised Fermat Spiral,    2×2 grid, avg DNI (power/heliostat)
+     Fig 5  – Optimised layouts side-by-side (RS + FS) with tower icon
+     Fig 6  – DE convergence curves (both layouts overlaid, 100 generations)
+     Fig 7  – Before/After efficiency comparison bar chart
+6. Print summary table (Table 6 equivalent)
 
-Removed from this pipeline (unoptimised GA baselines):
-  Figs 1 & 3 – plot_attenuation_rs() / plot_attenuation_fs()
-    These visualised the pre-optimisation field using default FieldParams,
-    reproducing Figs 1 & 3 from Haris et al. (2023) where the GA paper showed
-    the unoptimised attenuation maps.  Because this codebase replaces GA with
-    DE and focuses on the optimised result, those calls have been removed.
-    The functions still exist in plotting.py for standalone / reference use.
-
-  compute_baselines() – also removed from the active pipeline.
-    It computed annual_mean_efficiency for the default (unoptimised) FieldParams
-    to serve as the "before" bar in Fig 7.  We now use a lightweight helper
-    (compute_unopt_efficiency) that returns only the scalar efficiency values
-    needed for the comparison chart, without generating full efficiency maps.
+Removed from this pipeline:
+  Fig 8 – DNI dataset analysis  (removed per request)
+  Fig 1 – plot_attenuation_rs() (unoptimised RS baseline, available in plotting.py)
+  Fig 3 – plot_attenuation_fs() (unoptimised FS baseline, available in plotting.py)
 
 Run from the project root:
     python main.py
     python main.py --csv path/to/your_data.csv
-
-No external API calls.  All computation is local.
 """
 
 import sys
 import os
 
-# ── Ensure the project directory is on the path ───────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
@@ -52,23 +42,26 @@ from heliostat_field  import FieldParams, radial_staggered_layout, fermat_spiral
 from efficiency       import annual_mean_efficiency, field_mean_efficiency, field_total_power_mw
 from de_optimizer     import differential_evolution
 from plotting         import (
-    plot_cosine_4panel_rs,    # Fig 2 – RS layout, 4 design days  (optimised)
-    plot_power_4panel_fs,     # Fig 4 – FS layout, 4 design days  (optimised)
-    plot_optimised_layouts,   # Fig 5
-    plot_convergence,         # Fig 6 – DE convergence, 100 generations
-    plot_efficiency_comparison,  # Fig 7
-    plot_dni_data,            # Fig 8
-    # plot_attenuation_rs,    # Fig 1 – REMOVED: unoptimised RS baseline (GA paper)
-    # plot_attenuation_fs,    # Fig 3 – REMOVED: unoptimised FS baseline (GA paper)
+    plot_unoptimised_layouts_1x2,   # Fig 1b – unoptimised RS+FS 1×2 with tower icon
+    plot_unoptimised_rs_2x2,        # Fig 2u – unoptimised RS 2×2 (4 design days)
+    plot_cosine_4panel_rs,          # Fig 2  – optimised RS 2×2 (avg DNI)
+    plot_power_4panel_fs,           # Fig 4  – optimised FS 2×2 (power, avg DNI)
+    plot_optimised_layouts,         # Fig 5  – optimised layouts side-by-side
+    plot_rs_alone,                  # Fig 5a – optimised RS standalone single panel
+    plot_rs_fs_overlaid,            # Fig 5b – RS + FS overlaid on one axes
+    plot_convergence,               # Fig 6  – DE convergence
+    plot_efficiency_comparison,     # Fig 7  – before/after efficiency bars
+    # plot_attenuation_rs,          # Fig 1  – REMOVED (unoptimised RS baseline)
+    # plot_attenuation_fs,          # Fig 3  – REMOVED (unoptimised FS baseline)
+    # plot_dni_data,                # Fig 8  – REMOVED (DNI analysis)
 )
 
-# ── Resolve paths ──────────────────────────────────────────────────────────────
 _HERE    = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(_HERE, "solar-measurementspakistanquettawb-esmapqc.csv")
 OUT_DIR  = os.path.join(_HERE, "outputs")
 
 
-# ─── 1. Load data ─────────────────────────────────────────────────────────────
+# ─── 1. Load DNI data ─────────────────────────────────────────────────────────
 
 def load_data(csv_path: str = CSV_PATH):
     print("Loading DNI data …")
@@ -87,24 +80,14 @@ def load_data(csv_path: str = CSV_PATH):
     return df, design_dni
 
 
-# ─── 2. Unoptimised efficiency scalars (for Fig 7 "before" bars) ──────────────
-#
-#  NOTE: The full compute_baselines() function that generated efficiency maps
-#  and per-design-point tables (Table 4 in the paper) has been removed from
-#  the active pipeline.  It replicated the pre-optimisation (unoptimised GA
-#  baseline) analysis from Haris et al. (2023).  The layout generation and
-#  annual_mean_efficiency calls below are kept *only* to provide the scalar
-#  "before DE" values required by Fig 7.
-#
-#  If you need the full unoptimised baseline analysis (Tables 3-4, Figs 1-3
-#  from the GA paper) run plot_attenuation_rs() and plot_attenuation_fs()
-#  directly from plotting.py, or reinstate compute_baselines() below.
+# ─── 2. Unoptimised efficiency scalars (for Fig 7 and unoptimised figures) ────
 
 def compute_unopt_efficiency():
     """
     Return annual-mean efficiency and heliostat count for the unoptimised
-    (default FieldParams) RS and FS layouts.  Used only for the Fig 7
-    before/after comparison.  No figures are generated here.
+    (default FieldParams) RS and FS layouts.
+    Used for Fig 7 before/after comparison and to drive the new unoptimised
+    figures (Fig 1b and Fig 2u).  No optimisation maps are generated here.
     """
     base   = FieldParams()
     rs_pos = radial_staggered_layout(base, max_radius=450)
@@ -179,8 +162,8 @@ def print_summary_table(rs_eff_unopt, rs_result,
               f"{p.heliostat_length:6.2f} | {p.security_dist:5.3f} | "
               f"{eff_b:11.2f} | {result.best_efficiency:10.2f} | "
               f"{n_b:8d} | {result.n_heliostats:7d}")
-        imp = result.best_efficiency - eff_b
-        red = n_b - result.n_heliostats
+        imp  = result.best_efficiency - eff_b
+        red  = n_b - result.n_heliostats
         sign = "+" if imp >= 0 else ""
         print(f"{'  → Improvement':18s} {'':6s} {'':5s} {'':6s} {'':5s} "
               f"{'':11s} {sign}{imp:.2f}% {'':8s} −{red}")
@@ -193,38 +176,40 @@ def print_summary_table(rs_eff_unopt, rs_result,
 # ─── 5. Generate all active figures ───────────────────────────────────────────
 
 def generate_figures(df, design_dni,
+                     base_params,
                      rs_result, fs_result,
                      rs_eff_unopt, fs_eff_unopt,
                      n_rs_before, n_fs_before):
     print("\nGenerating figures …")
 
-    # Fig 1 – REMOVED (unoptimised RS attenuation map, GA paper baseline)
-    # plot_attenuation_rs()
-    # → Haris et al. 2023, Fig 1: pre-GA-optimisation attenuation map for
-    #   Radial Staggered layout with default FieldParams.  Available via
-    #   plot_attenuation_rs() in plotting.py if the unoptimised baseline
-    #   comparison is needed.
+    # ── NEW ──────────────────────────────────────────────────────────────────
+    # Fig 1b – Unoptimised RS + FS layouts side-by-side (1×2) with tower icon
+    plot_unoptimised_layouts_1x2(params=base_params)
 
-    # Fig 2 – Cosine + overall efficiency, RS layout, 4 design days (optimised)
-    plot_cosine_4panel_rs(params=rs_result.best_params)
+    # Fig 2u – Unoptimised Radial Staggered 2×2 (one panel per design day)
+    plot_unoptimised_rs_2x2(params=base_params)
 
-    # Fig 3 – REMOVED (unoptimised FS attenuation map, GA paper baseline)
-    # plot_attenuation_fs()
-    # → Haris et al. 2023, Fig 3: pre-GA-optimisation attenuation map for
-    #   Fermat Spiral layout with default FieldParams.  Available via
-    #   plot_attenuation_fs() in plotting.py if the unoptimised baseline
-    #   comparison is needed.
+    # ── UPDATED (2×2 grid, avg DNI) ──────────────────────────────────────────
+    # Fig 2 – Optimised Radial Staggered 2×2
+    plot_cosine_4panel_rs(params=rs_result.best_params, design_dni=design_dni)
 
-    # Fig 4 – Power per heliostat + overall efficiency, FS layout, 4 design days (optimised)
+    # Fig 4 – Optimised Fermat Spiral 2×2 (power per heliostat, avg DNI)
     plot_power_4panel_fs(design_dni, params=fs_result.best_params)
 
-    # Fig 5 – Optimised field layouts side-by-side
+    # ── UNCHANGED ─────────────────────────────────────────────────────────────
+    # Fig 5 – Optimised layouts side-by-side with tower icon
     plot_optimised_layouts(rs_result, fs_result, design_dni)
 
-    # Fig 6 – DE convergence curves, both layouts on one axes, 100 generations
+    # Fig 5a – Optimised RS standalone (single panel, mean efficiency annotated)
+    plot_rs_alone(rs_result, design_dni)
+
+    # Fig 5b – RS and FS overlaid on one axes (mean efficiency per layout annotated)
+    plot_rs_fs_overlaid(rs_result, fs_result, design_dni)
+
+    # Fig 6 – DE convergence curves
     plot_convergence(rs_result, fs_result)
 
-    # Fig 7 – Before/After efficiency + heliostat count comparison
+    # Fig 7 – Before/after efficiency + heliostat count
     plot_efficiency_comparison(
         rs_eff_unopt,          rs_result.best_efficiency,
         fs_eff_unopt,          fs_result.best_efficiency,
@@ -232,8 +217,7 @@ def generate_figures(df, design_dni,
         n_fs_before,           fs_result.n_heliostats,
     )
 
-    # Fig 8 – DNI dataset analysis
-    plot_dni_data(df)
+    # Fig 8 – REMOVED (DNI dataset analysis) per request
 
     print(f"\n  All figures saved to: {os.path.abspath(OUT_DIR)}")
 
@@ -256,8 +240,8 @@ def main():
     # 1. Load DNI data
     df, design_dni = load_data(args.csv)
 
-    # 2. Unoptimised efficiency scalars (lightweight – no maps generated)
-    print("\nComputing unoptimised efficiency scalars for Fig 7 …")
+    # 2. Unoptimised efficiency scalars + unoptimised base params
+    print("\nComputing unoptimised efficiency scalars …")
     base, rs_eff_unopt, fs_eff_unopt, n_rs_before, n_fs_before = \
         compute_unopt_efficiency()
 
@@ -271,6 +255,7 @@ def main():
 
     # 5. All active figures
     generate_figures(df, design_dni,
+                     base,
                      rs_result, fs_result,
                      rs_eff_unopt, fs_eff_unopt,
                      n_rs_before, n_fs_before)
