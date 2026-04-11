@@ -74,9 +74,15 @@ def load_dni_data(csv_path: str) -> pd.DataFrame:
 
 def average_design_point_dni(df: pd.DataFrame) -> dict:
     """
-    Compute average DNI at 11:00 for each of the four design points,
-    averaging across the available years (2015-2017).
-    Returns dict matching paper's Table 3 values.
+    Compute average DNI at 11:00 AM for each of the four design points,
+    averaging across ALL years present in the CSV.
+
+    No hardcoded defaults are used — all values come exclusively from the
+    CSV data.  Raises ValueError if a design point cannot be satisfied
+    even with the ±3-day fallback window.
+
+    Primary   : exact calendar day,  10:48–11:12  (catches 10-min interval data)
+    Fallback  : ±3 calendar days,    10:30–11:30  (handles isolated missing days)
     """
     design_dni = {}
     windows = {
@@ -86,16 +92,27 @@ def average_design_point_dni(df: pd.DataFrame) -> dict:
         "Winter Solstice":  (12, 21),
     }
     for name, (m, d) in windows.items():
+        # Primary: exact day, tight window around 11:00 across all years
         subset = df[(df["month"] == m) & (df["day"] == d) &
                     (df["hour"] >= 10.8) & (df["hour"] <= 11.2)]
         if len(subset):
-            design_dni[name] = subset["dni"].mean()
-        else:
-            # Fall back to ±3-day window
-            subset = df[(df["month"] == m) &
-                        (df["day"].between(d - 3, d + 3)) &
-                        (df["hour"] >= 10.5) & (df["hour"] <= 11.5)]
-            design_dni[name] = subset["dni"].mean() if len(subset) else 860.0
+            design_dni[name] = float(subset["dni"].mean())
+            continue
+
+        # Fallback: ±3-day window if exact date has no data in any year
+        subset = df[(df["month"] == m) &
+                    (df["day"].between(d - 3, d + 3)) &
+                    (df["hour"] >= 10.5) & (df["hour"] <= 11.5)]
+        if len(subset):
+            design_dni[name] = float(subset["dni"].mean())
+            continue
+
+        raise ValueError(
+            f"No DNI readings found in CSV for design point '{name}' "
+            f"(month={m}, day≈{d}, ~11:00 AM) — "
+            f"even the ±3-day fallback window returned no rows. "
+            f"Check that the CSV covers the required dates."
+        )
     return design_dni
 
 
